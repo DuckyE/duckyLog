@@ -1,0 +1,218 @@
+local API_URL    = "http://123.253.61.64:3005/egg-log"
+local AUTH_TOKEN = "CHANGE_THIS_SHARED_TOKEN"
+
+local PERIOD_HEARTBEAT = 600
+local MIN_SEND_INTERVAL = 15
+local DEBOUNCE_SEC = 2
+
+local Players     = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
+local LP          = Players.LocalPlayer
+
+local requestFn = (syn and syn.request) or (http and http.request) or rawget(getfenv(), "http_request") or rawget(getfenv(), "request")
+
+-- ➕ เพิ่ม Unicorn Egg และ Unicorn Pro Egg (เฉพาะแบบปกติ ไม่มีมิวเทชัน)
+local TARGETS = {
+  { label = "Bone Dragon Egg",  types = { "BoneDragonEgg", "Bone Dragon Egg" }, mutations = { "Jurassic", "Dino" } },
+  { label = "Ultra Egg",        types = { "UltraEgg", "Ultra Egg" },            mutations = { "Jurassic", "Dino" } },
+  { label = "Unicorn Egg",      types = { "UnicornEgg", "Unicorn Egg" },        mutations = { "none" } },  -- นับเฉพาะแบบปกติ
+  { label = "Unicorn Pro Egg",  types = { "UnicornProEgg", "Unicorn Pro Egg" }, mutations = { "none" } },  -- นับเฉพาะแบบปกติ
+}
+
+local function ready()
+    if not game:IsLoaded() then game.Loaded:Wait() end
+    LP:WaitForChild("PlayerGui")
+end
+
+local function normTypeName(s)
+    if not s then return nil end
+    s = string.lower(tostring(s))
+    return s:gsub("[%s%-%_]+", "")
+end
+
+-- 🎯 ปรับให้ค่าสถานะมิวเทชันว่าง/ไม่มี → "none"
+local function normMutation(s)
+    if s == nil or s == "" then return "none" end
+    s = string.lower(tostring(s))
+    if s == "dino" then s = "jurassic" end
+    if s == "normal" or s == "base" or s == "default" then return "none" end
+    return s
+end
+
+local function listToSetNorm(list, isType)
+    local set = {}
+    for _, v in ipairs(list) do
+        set[(isType and normTypeName(v) or string.lower(tostring(v)))] = true
+    end
+    return set
+end
+
+local PREPARED = {}
+do
+    for i, t in ipairs(TARGETS) do
+        local types, muts = t.types, t.mutations
+        PREPARED[i] = {
+            label   = t.label or ("target_"..i),
+            anyType = (types == "*" or types == nil),
+            anyMut  = (muts  == "*" or muts  == nil),
+            typeSet = (types and types ~= "*") and listToSetNorm(types, true)  or nil,
+            mutSet  = (muts  and muts  ~= "*") and listToSetNorm(muts,  false) or nil,
+        }
+    end
+end
+
+local function matchTarget(prep, typeVal, mutVal)
+    local keyT = normTypeName(typeVal)
+    local keyM = normMutation(mutVal)  -- ใช้ตัวใหม่ที่ map เป็น "none" ได้
+    local tOk = prep.anyType or (keyT and prep.typeSet and prep.typeSet[keyT] or false)
+    local mOk = prep.anyMut  or (keyM and prep.mutSet  and prep.mutSet[keyM]  or false)
+    return tOk and mOk
+end
+
+local function countTargets(eggFolder)
+    if not eggFolder then return {} end
+    local result = {}; for i in ipairs(PREPARED) do result[i] = 0 end
+    for _, cfg in ipairs(eggFolder:GetChildren()) do
+        if #cfg:GetChildren() == 0 then
+            local t = cfg:GetAttribute("T") or cfg:GetAttribute("Type")
+            local m = cfg:GetAttribute("M") or cfg:GetAttribute("Mutation")
+            for i, prep in ipairs(PREPARED) do
+                if matchTarget(prep, t, m) then result[i] += 1 end
+            end
+        end
+    end
+    return result
+end
+
+local function toSummaryTable(res)
+    local t = {}
+    for i, n in ipairs(res) do
+        t[#t+1] = { label = PREPARED[i].label, count = n or 0 }
+    end
+    return t
+end
+
+local function digestCounts(res)
+    local parts = {}
+    for i = 1, #res do parts[#parts+1] = tostring(res[i] or 0) end
+    return table.concat(parts, "|")
+end
+
+local function sendToApi(payloadTbl)
+    if typeof(requestFn) ~= "function" then return false end
+    local ok = pcall(function()
+        requestFn({
+            Url = API_URL,
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json",
+                ["X-Auth-Token"] = AUTH_TOKEN,
+            },
+            Body = HttpService:JSONEncode(payloadTbl),
+        })
+    end)
+    return ok == true
+end
+
+local lastDigest = ""
+local lastSendAt = 0
+local debounceFlag = false
+local scheduled = false
+
+local function buildAndMaybeSend(reason, eggFolder)
+    local now = os.clock()
+    if now - lastSendAt < MIN_SEND_INTERVAL then
+        if not scheduled then
+            scheduled = true
+            task.delay((MIN_SEND_INTERVAL - (now - lastSendAt)) + math.random(), function()
+                scheduled = false
+                buildAndMaybeSend("rate_limit_flush", eggFolder)
+            end)
+        end
+        return
+    end
+
+    local r = countTargets(eggFolder)
+    local d = digestCounts(r)
+    if d == lastDigest and reason ~= "heartbeat" then
+        return
+    end
+
+    local payload = {
+        player = { userId = LP.UserId, name = LP.Name, displayName = LP.DisplayName },
+        placeId = game.PlaceId,
+        jobId = tostring(game.JobId or "N/A"),
+        payload = {
+            clientTime = os.time(),
+            period = (reason == "heartbeat") and PERIOD_HEARTBEAT or 0,
+            reason = reason,
+            totals = toSummaryTable(r)
+        }
+    }
+
+    local ok = sendToApi(payload)
+    lastSendAt = now
+    if ok then lastDigest = d end
+end
+
+local function requestSend(reason, eggFolder)
+    if debounceFlag then return end
+    debounceFlag = true
+    task.delay(DEBOUNCE_SEC + math.random(), function()
+        debounceFlag = false
+        buildAndMaybeSend(reason, eggFolder)
+    end)
+end
+
+task.spawn(function()
+    ready()
+    math.randomseed(os.clock()*1e6 % 2^31)
+
+    local pg = LP:WaitForChild("PlayerGui")
+    local data = pg:WaitForChild("Data")
+    local eggFolder = data:FindFirstChild("Egg") or Instance.new("Folder")
+    if eggFolder.Parent ~= data then eggFolder.Name = "Egg"; eggFolder.Parent = data end
+
+    local function hookConfig(cfg)
+        local s1 = cfg:GetAttributeChangedSignal("T")
+        local s2 = cfg:GetAttributeChangedSignal("Type")
+        local s3 = cfg:GetAttributeChangedSignal("M")
+        local s4 = cfg:GetAttributeChangedSignal("Mutation")
+        s1:Connect(function() requestSend("attr_change", eggFolder) end)
+        s2:Connect(function() requestSend("attr_change", eggFolder) end)
+        s3:Connect(function() requestSend("attr_change", eggFolder) end)
+        s4:Connect(function() requestSend("attr_change", eggFolder) end)
+    end
+
+    for _, c in ipairs(eggFolder:GetChildren()) do hookConfig(c) end
+
+    eggFolder.ChildAdded:Connect(function(c)
+        hookConfig(c)
+        requestSend("child_added", eggFolder)
+    end)
+    eggFolder.ChildRemoved:Connect(function(_)
+        requestSend("child_removed", eggFolder)
+    end)
+
+    requestSend("bootstrap", eggFolder)
+
+    task.spawn(function()
+        while true do
+            task.wait(PERIOD_HEARTBEAT + math.random())
+            requestSend("heartbeat", eggFolder)
+        end
+    end)
+end)
+
+function addTarget(label, types, mutations)
+    local idx = #PREPARED + 1
+    local anyType = (types == "*" or types == nil)
+    local anyMut  = (mutations == "*" or mutations == nil)
+    PREPARED[idx] = {
+        label = label or ("target_"..idx),
+        anyType = anyType,
+        anyMut  = anyMut,
+        typeSet = (not anyType) and listToSetNorm(types, true) or nil,
+        mutSet  = (not anyMut)  and listToSetNorm(mutations, false) or nil,
+    }
+end
