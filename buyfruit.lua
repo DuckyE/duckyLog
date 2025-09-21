@@ -1,8 +1,20 @@
+-- ================= Auto Buy Fruit (Data-driven + PrettyName map + Multi-arg Remote) =================
+
+-- เลือกแบบเดิมด้วย id (ไม่จำเป็นต้องตรงทั้งหมดแล้ว เพราะมีแมปชื่อโชว์ช่วย)
 local SELECTED_FRUITS = {
     Strawberry=false, Blueberry=false, Watermelon=false, Apple=false, Orange=false,
     Corn=false, Banana=false, Grape=false, Pear=false, Pineapple=false,
     GoldMango=true, BloodstoneCycad=true, ColossalPinecone=true, VoltGinkgo=true,
     DeepseaPearlFruit=true,
+}
+
+-- เลือกด้วย “ชื่อโชว์ในเกม” (ถ้าพิมพ์ไว้จะถูกแปลงเป็น id ให้เอง)
+local SELECTED_BY_NAME = {
+    "Gold Mango",
+    "Bloodstone Cycad",
+    "Colossal Pinecone",
+    "Volt Ginkgo",
+    "Deepsea Pearl Fruit",
 }
 
 local BUDGET_PER_TICK = 50000000
@@ -13,6 +25,7 @@ local VERBOSE, START_STOP_TOAST, PURCHASE_TOAST = true, true, true
 local SEND_TO_DISCORD = true
 local WEBHOOK_URL = "https://discord.com/api/webhooks/1419111758051672236/-UtONg5EotVTM2RusXQ5RH5drjJzvt4NwcfmKYaIp6jhKKMMNpewS00aStGiJCa_7P9D"
 
+-- ราคา default เผื่อหาใน Data ไม่เจอ
 local FRUIT_DATA = {
     Strawberry={Price="5,000"}, Blueberry={Price="20,000"}, Watermelon={Price="80,000"},
     Apple={Price="400,000"}, Orange={Price="1,200,000"}, Corn={Price="3,500,000"},
@@ -32,17 +45,20 @@ local FRUIT_LABEL = { DeepseaPearlFruit="Deepsea Pearl Fruit" }
 local function labelOf(id) return FRUIT_LABEL[id] or id end
 local function fruitIcon(id) return FRUIT_EMOJI[id] or "" end
 
+-- ========== Services ==========
 local Players=game:GetService("Players")
 local ReplicatedStorage=game:GetService("ReplicatedStorage")
 local StarterGui=game:GetService("StarterGui")
 local HttpService=game:GetService("HttpService")
 local LocalPlayer=Players.LocalPlayer
 
+-- ========== Utils ==========
 local function parsePrice(p) if type(p)=="number" then return p end local s=type(p)=="string" and p or "0"; s=s:gsub(",",""):gsub("%s+",""); return tonumber(s) or 0 end
 local function comma(n) n=tonumber(n) or 0; local s=tostring(math.floor(n)); local k repeat s,k=s:gsub("^(-?%d+)(%d%d%d)","%1,%2") until k==0; return s end
-local function notify(title,text,d) pcall(function() StarterGui:SetCore("SendNotification",{Title=tostring(title),Text=tostring(text),Duration=d or 3}) end) local line=("[AutoBuyFruit] %s - %s"):format(title,text); if rconsoleprint then rconsoleprint(line.."\n") else print(line) end end
+local function notify(title,text,d) pcall(function() StarterGui:SetCore("SendNotification",{Title=tostring(title),Text=tostring(text),Duration=d or 3}) end) if rconsoleprint then rconsoleprint(("[AutoBuyFruit] %s - %s\n"):format(title,text)) else print("[AutoBuyFruit]",title,text) end end
 local function getNetWorth() local lp=LocalPlayer; if not lp then return 0 end local a=lp:GetAttribute("NetWorth"); if type(a)=="number" then return a end local ls=lp:FindFirstChild("leaderstats"); local v=ls and ls:FindFirstChild("NetWorth"); return (v and type(v.Value)=="number") and v.Value or 0 end
 
+-- ========== ค้นหาแหล่งข้อมูลร้านใน ReplicatedStorage ==========
 local function findStoreData()
     local cands={{"Data","FoodStore"},{"GameData","FoodStore"},{"Configs","FoodStore"},{"Shop","FoodStore"},{"FoodStore"}}
     for _,path in ipairs(cands) do
@@ -55,6 +71,32 @@ local function findStoreData()
 end
 local STORE_DATA=findStoreData()
 
+-- ========== สแกน “ชื่อโชว์ -> id จริง” ==========
+local STORE_IDS = {}    -- PrettyName -> Id
+local STORE_PRETTY = {} -- Id -> PrettyName
+local function discoverStore()
+    if not STORE_DATA then return end
+    for _, ch in ipairs(STORE_DATA:GetChildren()) do
+        local id = ch.Name
+        -- ดึงชื่อโชว์จาก Attribute/Value/Label ถ้ามี
+        local pretty =
+            ch:GetAttribute("Label") or ch:GetAttribute("Name") or
+            (ch:FindFirstChild("Name") and (ch.Name.Value or ch.Name.Text)) or
+            (ch:FindFirstChild("Label") and (ch.Label.Value or ch.Label.Text)) or
+            id
+        STORE_IDS[pretty] = id
+        STORE_PRETTY[id] = pretty
+    end
+end
+discoverStore()
+
+-- แปลงรายการ “ชื่อโชว์” ให้ติ๊กใน SELECTED_FRUITS อัตโนมัติ
+for _, pretty in ipairs(SELECTED_BY_NAME) do
+    local id = STORE_IDS[pretty] or pretty:gsub("%s+","") -- fallback: ลบช่องว่าง -> DeepseaPearlFruit
+    if id then SELECTED_FRUITS[id] = true end
+end
+
+-- ========== ราคา ==========
 local function getFruitPrice(fruitId)
     local function n(v) if type(v)=="number" then return v end if type(v)=="string" then return parsePrice(v) end return 0 end
     if STORE_DATA then
@@ -71,6 +113,7 @@ local function getFruitPrice(fruitId)
     local meta=FRUIT_DATA[fruitId]; return meta and n(meta.Price) or 0
 end
 
+-- ========== สต็อก ==========
 local function getFoodStoreLST()
     local pg=LocalPlayer and LocalPlayer:FindFirstChild("PlayerGui"); if not pg then return nil end
     local data=pg:FindFirstChild("Data"); if not data then return nil end
@@ -90,6 +133,7 @@ local function fruitInStock(fruitId)
         local rf=ReplicatedStorage:FindFirstChild("Remote"); rf=rf and rf:FindFirstChild("FoodStoreRF")
         if rf and rf:IsA("RemoteFunction") then local ok,has=pcall(function() return rf:InvokeServer("GetStock",fruitId) end); if ok and has then return true end end
     end
+    -- fallback: จาก PlayerGui
     local lst=getFoodStoreLST(); if not lst then return false end
     local id=fruitId; local spaced=id:gsub("(%l)(%u)","%1 %2"):gsub("(%u)(%u%l)","%1 %2"); local under=spaced:gsub("%s+","_")
     local keys={id,id:lower(),id:upper(),under,under:lower(),spaced,spaced:lower(),spaced:gsub("%s+","")}
@@ -100,19 +144,42 @@ local function fruitInStock(fruitId)
     return false
 end
 
+-- ========== ยิงรีโมตแบบลองหลายรูปแบบ ==========
 local function fireBuyFruit(fruitId)
-    local ok,err=pcall(function() ReplicatedStorage:WaitForChild("Remote"):WaitForChild("FoodStoreRE"):FireServer(fruitId) end)
-    return ok,err
+    local remoteFolder = ReplicatedStorage:FindFirstChild("Remote")
+    local ev = remoteFolder and remoteFolder:FindFirstChild("FoodStoreRE")
+    if not ev then return false, "Remote not found" end
+
+    -- 1) FireServer(id)
+    local ok = pcall(function() ev:FireServer(fruitId) end)
+    if ok then return true end
+
+    -- 2) FireServer("Buy", id, amount)
+    ok = pcall(function() ev:FireServer("Buy", fruitId, 1) end)
+    if ok then return true end
+
+    -- 3) FireServer({id=id, amount=1})
+    ok = pcall(function() ev:FireServer({id = fruitId, amount = 1}) end)
+    if ok then return true end
+
+    return false, "wrong-args"
 end
 
+-- ========== Discord ==========
 local function getRequestFunc() return (syn and syn.request) or request or http_request or (fluxus and fluxus.request) or (krnl and krnl.request) or (http and http.request) end
 local function sendDiscord(payload) if not SEND_TO_DISCORD or WEBHOOK_URL=="" then return end local req=getRequestFunc(); if not req then return end pcall(function() req({Url=WEBHOOK_URL,Method="POST",Headers={["Content-Type"]="application/json"},Body=HttpService:JSONEncode(payload)}) end) end
 local function sendPurchaseCard(id, price)
     local player=(LocalPlayer and (LocalPlayer.DisplayName~="" and LocalPlayer.DisplayName or LocalPlayer.Name)) or "Player"
-    local embed={author={name=player},title="🛍️ Fruit Purchased!",color=0x2ECC71,fields={{name="👤 Player",value="`"..player.."`",inline=true},{name="🍎 Fruit",value="`"..fruitIcon(id).." "..labelOf(id).."`",inline=true},{name="🪙 Price",value="`฿"..comma(price).."`",inline=true}},footer={text="Auto Buy Fruit"}}
+    local pretty = STORE_PRETTY[id] or labelOf(id)
+    local embed={author={name=player},title="🛍️ Fruit Purchased!",color=0x2ECC71,
+        fields={{name="👤 Player",value="`"..player.."`",inline=true},
+                {name="🍎 Fruit", value="`"..fruitIcon(id).." "..pretty.."`",inline=true},
+                {name="🪙 Price", value="`฿"..comma(price).."`",inline=true}},
+        footer={text="Auto Buy Fruit"}}
     sendDiscord({embeds={embed}})
 end
 
+-- ========== Main loop ==========
 local RUNNING=true
 if START_STOP_TOAST then notify("🍎 Auto Buy Fruit","🟢 เริ่มทำงานแล้ว ✅",3) end
 print("[AutoBuyFruit] started. Call _G.StopAutoBuyFruit() to stop.")
@@ -122,6 +189,7 @@ task.spawn(function()
         local budgetLeft=BUDGET_PER_TICK
         local netWorth=getNetWorth()
 
+        -- รวมรายการที่เลือก (จาก id + จากชื่อโชว์ที่ถูกแมป)
         local wanted={}
         for id,on in pairs(SELECTED_FRUITS) do
             if on then table.insert(wanted,{id=id,price=getFruitPrice(id)}) end
@@ -134,11 +202,13 @@ task.spawn(function()
             local bought=0
             while bought<MAX_PER_FRUIT_PER_TICK and budgetLeft>=item.price and netWorth>=item.price do
                 local ok,err=fireBuyFruit(item.id)
-                if not ok then if VERBOSE then notify("❌ ซื้อไม่สำเร็จ",labelOf(item.id).." ("..tostring(err)..")",3) end break end
+                if not ok then if VERBOSE then notify("❌ ซื้อไม่สำเร็จ", (STORE_PRETTY[item.id] or labelOf(item.id)).." ("..tostring(err)..")",3) end break end
                 bought=bought+1
                 budgetLeft=budgetLeft-item.price
                 netWorth=netWorth-item.price
-                if VERBOSE and PURCHASE_TOAST then notify("✅ ซื้อสำเร็จ",labelOf(item.id).." ฿"..comma(item.price),2) end
+                if VERBOSE and PURCHASE_TOAST then
+                    notify("✅ ซื้อสำเร็จ",(STORE_PRETTY[item.id] or labelOf(item.id)).." ฿"..comma(item.price),2)
+                end
                 sendPurchaseCard(item.id, item.price)
                 task.wait(0.2)
             end
