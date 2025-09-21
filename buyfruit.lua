@@ -1,5 +1,5 @@
 local SELECTED_FRUITS = {
-  Strawberry=false, Blueberry=false, Watermelon=false, Apple=true, Orange=false,
+  Strawberry=false, Blueberry=false, Watermelon=false, Apple=false, Orange=false,
   Corn=false, Banana=false, Grape=false, Pear=false, Pineapple=false,
   GoldMango=true, BloodstoneCycad=true, ColossalPinecone=true, VoltGinkgo=true,
   DeepseaPearlFruit=true,
