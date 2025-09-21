@@ -1,3 +1,4 @@
+wait(10)
 local SELECTED_FRUITS = {
     Strawberry=true, Blueberry=false, Watermelon=false, Apple=false, Orange=false,
     Corn=false, Banana=false, Grape=false, Pear=false, Pineapple=false,
