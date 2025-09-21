@@ -1,5 +1,5 @@
 local SELECTED_FRUITS = {
-  Strawberry=false, Blueberry=false, Watermelon=false, Apple=false, Orange=false,
+  Strawberry=false, Blueberry=false, Watermelon=false, Apple=true, Orange=false,
   Corn=false, Banana=false, Grape=false, Pear=false, Pineapple=false,
   GoldMango=true, BloodstoneCycad=true, ColossalPinecone=true, VoltGinkgo=true,
   DeepseaPearlFruit=true,
@@ -45,19 +45,28 @@ local function toast(t,txt,d) if not VERBOSE then return end pcall(function() St
 local function getNetWorth() local a=LP:GetAttribute("NetWorth"); if type(a)=="number" then return a end local ls=LP:FindFirstChild("leaderstats"); local v=ls and ls:FindFirstChild("NetWorth"); return (v and type(v.Value)=="number") and v.Value or 0 end
 
 local function findStoreData()
-  local cands={{"Data","FoodStore"},{"GameData","FoodStore"},{"Configs","FoodStore"},{"Shop","FoodStore"},{"FoodStore"}}; for _,path in ipairs(cands) do local node=RS; local ok=true; for _,name in ipairs(path) do node=node:FindFirstChild(name); if not node then ok=false break end end; if ok then return node end end
+  local cands={{"Data","FoodStore"},{"GameData","FoodStore"},{"Configs","FoodStore"},{"Shop","FoodStore"},{"FoodStore"}}
+  for _,path in ipairs(cands) do
+    local node=RS; local ok=true
+    for _,name in ipairs(path) do node=node:FindFirstChild(name); if not node then ok=false break end end
+    if ok then return node end
+  end
 end
-local function findRemotes() local f=RS:FindFirstChild("Remote") or RS; return f:FindFirstChild("FoodStoreRE") or f:FindFirstChild("ShopRE") or f:FindFirstChild("BuyRE"), f:FindFirstChild("FoodStoreRF") or f:FindFirstChild("ShopRF") or f:FindFirstChild("StoreRF") end
+local function findRemotes()
+  local f=RS:FindFirstChild("Remote") or RS
+  return f:FindFirstChild("FoodStoreRE") or f:FindFirstChild("ShopRE") or f:FindFirstChild("BuyRE"),
+         f:FindFirstChild("FoodStoreRF") or f:FindFirstChild("ShopRF") or f:FindFirstChild("StoreRF")
+end
 local STORE_DATA=findStoreData()
 local BUY_RE,INFO_RF=findRemotes()
 
 local NAME_TO_ID,ID_TO_NAME,PRICE_MAP,STOCK_MAP={},{},{},{}
-
 local function harvestFromData()
   if not STORE_DATA then return end
   for _,ch in ipairs(STORE_DATA:GetChildren()) do
     local id=ch.Name
-    local pretty=ch:GetAttribute("Label") or ch:GetAttribute("Name"); if not pretty then local sv=ch:FindFirstChild("Name") or ch:FindFirstChild("Label"); if sv and sv:IsA("StringValue") then pretty=sv.Value end end
+    local pretty=ch:GetAttribute("Label") or ch:GetAttribute("Name")
+    if not pretty then local sv=ch:FindFirstChild("Name") or ch:FindFirstChild("Label"); if sv and sv:IsA("StringValue") then pretty=sv.Value end end
     pretty=pretty or id; ID_TO_NAME[id]=pretty; NAME_TO_ID[pretty]=id; NAME_TO_ID[pretty:lower()]=id
     local price=ch:GetAttribute("Price") or ch:GetAttribute("price"); local pv=ch:FindFirstChild("Price"); if not price and pv and (pv:IsA("NumberValue") or pv:IsA("IntValue") or pv:IsA("StringValue")) then price=pv.Value end
     if not price and ch:IsA("ModuleScript") then local ok,t=pcall(require,ch); if ok and type(t)=="table" then price=t.Price or t.price end end
@@ -67,16 +76,16 @@ local function harvestFromData()
   end
   local prices=STORE_DATA:FindFirstChild("Prices"); if prices and prices:IsA("ModuleScript") then local ok,t=pcall(require,prices); if ok and type(t)=="table" then for id,v in pairs(t) do if type(v)=="table" then v=v.Price or v.price end; if PRICE_MAP[id]==nil then PRICE_MAP[id]=parsePrice(v) end end end end
 end
-
 local function harvestFromRemote()
-  if not (INFO_RF and INFO_RF.IsA and INFO_RF:IsA("RemoteFunction")) then return end
+  if not (INFO_RF and INFO_RF:IsA("RemoteFunction")) then return end
   local tries={function() return INFO_RF:InvokeServer("List") end,function() return INFO_RF:InvokeServer("GetAll") end,function() return INFO_RF:InvokeServer({action="List"}) end}
   for _,fn in ipairs(tries) do
     local ok,ret=pcall(fn)
     if ok and type(ret)=="table" then
       if #ret>0 then
         for _,row in ipairs(ret) do
-          local id=row.Id or row.id or (row.Name and tostring(row.Name):gsub("%s+","")); if id then
+          local id=row.Id or row.id or (row.Name and tostring(row.Name):gsub("%s+",""))
+          if id then
             if row.Name then ID_TO_NAME[id]=tostring(row.Name); NAME_TO_ID[tostring(row.Name)]=id; NAME_TO_ID[tostring(row.Name):lower()]=id end
             if row.Price or row.price then PRICE_MAP[id]=parsePrice(row.Price or row.price) end
             if row.Stock or row.stock or row.Qty or row.qty then STOCK_MAP[id]=tonumber(row.Stock or row.stock or row.Qty or row.qty) or 0 end
@@ -95,7 +104,6 @@ local function harvestFromRemote()
     end
   end
 end
-
 local function refreshStoreMaps() harvestFromData(); harvestFromRemote() end
 local function mergeSelectionsFromPretty() for _,pretty in ipairs(SELECTED_BY_NAME) do local id=NAME_TO_ID[pretty] or NAME_TO_ID[pretty:lower()] or pretty:gsub("%s+",""); if id then SELECTED_FRUITS[id]=true end end end
 local function getFruitPrice(id) if PRICE_MAP[id] then return PRICE_MAP[id] end local meta=FRUIT_DATA[id]; return meta and parsePrice(meta.Price) or 0 end
@@ -109,12 +117,11 @@ local function getStockNow(id)
   end
   return nil
 end
-
 local function fruitInStock(id) local q=STOCK_MAP[id]; if type(q)=="number" then return q>0 end local n=getStockNow(id); if type(n)=="number" then return n>0 end return true end
 
 local function findRE() local re,rf=findRemotes(); if re then BUY_RE=re end; if rf then INFO_RF=rf end end
 local function tryFireBuy(id)
-  findRE(); if not (BUY_RE and BUY_RE.IsA and BUY_RE:IsA("RemoteEvent")) then return false,"no-remote" end
+  findRE(); if not (BUY_RE and BUY_RE:IsA("RemoteEvent")) then return false,"no-remote" end
   local ok=pcall(function() BUY_RE:FireServer(id) end); if ok then return true end
   ok=pcall(function() BUY_RE:FireServer("Buy",id,1) end); if ok then return true end
   ok=pcall(function() BUY_RE:FireServer({id=id,amount=1}) end); if ok then return true end
@@ -129,22 +136,21 @@ local POST_LOG_DELAY=0.20
 local BETWEEN_PURCHASE_DELAY=0.25
 local BETWEEN_ITEMS_DELAY=0.15
 
+-- ตอนยืนยันสำเร็จ ยังตรวจจาก NetWorth/Stock แต่ไม่คืนค่าจำนวนเงินอีกต่อไป
 local function purchaseOnce(id, price)
   local beforeNW=getNetWorth()
   local beforeQty=getStockNow(id)
-  local fired=tryFireBuy(id); if not fired then return false,0 end
+  local fired=tryFireBuy(id); if not fired then return false end
   task.wait(AFTER_FIRE_PAUSE)
-  local t0=os.clock(); local success=false
+  local t0=os.clock()
   repeat
     task.wait(POLL_STEP)
     local nw=getNetWorth()
-    if nw < beforeNW - math.max(1, math.floor(price*0.95)) then success=true break end
+    if nw < beforeNW - math.max(1, math.floor(price*0.95)) then return true end
     local q=getStockNow(id)
-    if type(q)=="number" and type(beforeQty)=="number" and q < beforeQty then success=true break end
+    if type(q)=="number" and type(beforeQty)=="number" and q < beforeQty then return true end
   until os.clock()-t0>VERIFY_WINDOW
-  local paid=math.max(0, beforeNW - getNetWorth())
-  if success then task.wait(POST_LOG_DELAY) end
-  return success, paid
+  return false
 end
 
 local function reqFn() return (syn and syn.request) or request or http_request or (fluxus and fluxus.request) or (krnl and krnl.request) or (http and http.request) end
@@ -212,14 +218,13 @@ task.spawn(function()
       if it.price<=0 or net<it.price or not fruitInStock(it.id) then task.wait(BETWEEN_ITEMS_DELAY) continue end
       local bought=0
       while bought<MAX_PER_FRUIT_PER_TICK and budget>=it.price and net>=it.price do
-        local ok,paid=purchaseOnce(it.id,it.price)
+        local ok=purchaseOnce(it.id,it.price)
         if not ok then break end
         bought=bought+1
-        local spent=(paid>0 and paid or it.price)
-        budget=budget-spent
-        net=net-spent
-        if PURCHASE_TOAST then toast("✅ ซื้อสำเร็จ",(ID_TO_NAME[it.id] or labelOf(it.id)).." ฿"..comma(spent),1.8) end
-        sendPurchaseCard(it.id,spent)
+        budget = budget - it.price   -- ใช้ “ราคาไอเท็ม” เสมอ
+        net    = net    - it.price
+        if PURCHASE_TOAST then toast("✅ ซื้อสำเร็จ",(ID_TO_NAME[it.id] or labelOf(it.id)).." ฿"..comma(it.price),1.8) end
+        sendPurchaseCard(it.id,it.price)  -- log เป็นราคาไอเท็ม
         if type(STOCK_MAP[it.id])=="number" then STOCK_MAP[it.id]=math.max(0,(STOCK_MAP[it.id] or 1)-1) end
         refreshStoreMaps()
         task.wait(BETWEEN_PURCHASE_DELAY)
