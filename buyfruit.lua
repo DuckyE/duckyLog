@@ -1,4 +1,3 @@
--- ========= CONFIG: selections =========
 local SELECTED_FRUITS = {
   Strawberry=false, Blueberry=false, Watermelon=false, Apple=false, Orange=false,
   Corn=false, Banana=false, Grape=false, Pear=true, Pineapple=true,
@@ -10,7 +9,6 @@ local SELECTED_BY_NAME = {
   "Dragon Fruit","Durian"
 }
 
--- ========= CONFIG: behavior/logging =========
 local MAX_PER_FRUIT_PER_TICK = math.huge
 local VERBOSE = true
 local PURCHASE_TOAST = true
@@ -18,7 +16,6 @@ local SEND_LOG = true
 local DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1419111758051672236/-UtONg5EotVTM2RusXQ5RH5drjJzvt4NwcfmKYaIp6jhKKMMNpewS00aStGiJCa_7P9D"
 local LOG_TAG = "AutoFruit"
 
--- ========= reference data (fallback) =========
 local FRUIT_DATA = {
   Strawberry={Price="5,000"}, Blueberry={Price="20,000"}, Watermelon={Price="80,000"},
   Apple={Price="400,000"}, Orange={Price="1,200,000"}, Corn={Price="3,500,000"},
@@ -38,21 +35,18 @@ local FRUIT_LABEL = { DeepseaPearlFruit="Deepsea Pearl Fruit", DragonFruit="Drag
 local function labelOf(id) return FRUIT_LABEL[id] or id end
 local function fruitIcon(id) return FRUIT_EMOJI[id] or "" end
 
--- ========= services =========
 local Players=game:GetService("Players")
 local RS=game:GetService("ReplicatedStorage")
 local StarterGui=game:GetService("StarterGui")
 local HttpService=game:GetService("HttpService")
 local LP=Players.LocalPlayer
 
--- ========= http request detect =========
 local requestFn = (syn and syn.request)
   or (http and http.request)
   or rawget(getfenv(), "http_request")
   or rawget(getfenv(), "request")
   or nil
 
--- ========= utils =========
 local function parsePrice(p)
   if type(p)=="number" then return p end
   local s=type(p)=="string" and p or "0"; s=s:gsub(",",""):gsub("%s+","")
@@ -83,7 +77,6 @@ local function waitNetWorth(minWait, maxWait)
   return getNetWorth() or 0
 end
 
--- ========= discover store/remote =========
 local function findStoreData()
   local cands={{"Data","FoodStore"},{"GameData","FoodStore"},{"Configs","FoodStore"},{"Shop","FoodStore"},{"FoodStore"}}
   for _,path in ipairs(cands) do
@@ -101,7 +94,6 @@ end
 local STORE_DATA=findStoreData()
 local BUY_RE,INFO_RF=findRemotes()
 
--- ========= maps =========
 local NAME_TO_ID,ID_TO_NAME,PRICE_MAP,STOCK_MAP={},{},{},{}
 local function harvestFromData()
   if not STORE_DATA then return end
@@ -183,7 +175,6 @@ local function getFruitPrice(id)
   local meta=FRUIT_DATA[id]; return meta and parsePrice(meta.Price) or 0
 end
 
--- ========= stock (fresh when risky) =========
 local function getStockNow(id)
   if type(STOCK_MAP[id])=="number" then return STOCK_MAP[id] end
   local f=RS:FindFirstChild("Remote") or RS
@@ -198,15 +189,16 @@ local function getStockNow(id)
   end
   return nil
 end
+
+-- NEW: be permissive if stock can't be read
 local function fruitInStockFresh(id, eta)
   local cached = STOCK_MAP[id]
-  if cached and cached > 0 and (eta and eta > 60) then return true end
+  if type(cached) == "number" then return cached > 0 end
   local live = getStockNow(id)
-  if type(live)=="number" then STOCK_MAP[id]=live; return live>0 end
-  return cached==nil or cached>0
+  if type(live) == "number" then STOCK_MAP[id]=live; return live>0 end
+  return true
 end
 
--- ========= buy remotes =========
 local function findRE() local re,rf=findRemotes(); if re then BUY_RE=re end; if rf then INFO_RF=rf end end
 local function tryFireBuy(id)
   findRE(); if not (BUY_RE and BUY_RE:IsA("RemoteEvent")) then return false,"no-remote" end
@@ -217,7 +209,6 @@ local function tryFireBuy(id)
   return false,"wrong-args"
 end
 
--- ========= verify/logging =========
 local AFTER_FIRE_PAUSE=0.30
 local VERIFY_WINDOW=3.0
 local POLL_STEP=0.12
@@ -251,13 +242,11 @@ local function safeRequest(opts)
   return status>=200 and status<300, status, body
 end
 
--- === Embed (no profile image) ===
 local function buildDiscordBody(payload)
   local buyer = (LP and (LP.DisplayName and (LP.DisplayName.." ("..LP.Name..")") or LP.Name)) or "Player"
   local uid   = payload.uid or HttpService:GenerateGUID(false)
   local fruit = payload.name or payload.id
   local icon  = fruitIcon(payload.id) or ""
-
   local fields = {
     { name = "🆔 UID", value = tostring(uid), inline = false },
     { name = "🍎 Fruit", value = tostring(fruit), inline = true },
@@ -267,7 +256,6 @@ local function buildDiscordBody(payload)
     { name = "🧑‍💼 Buyer", value = buyer, inline = true },
     { name = "🕒 เวลา (ไทย)", value = nowThaiISO(), inline = false },
   }
-
   return {
     username = buyer,
     embeds = {{
@@ -283,9 +271,7 @@ end
 
 local LOG_QUEUE = {}
 local RUN_LOG_SENDER = true
-local function enqueueLog(payload)
-  table.insert(LOG_QUEUE, { payload = payload, tries = 0, nextAt = 0 })
-end
+local function enqueueLog(payload) table.insert(LOG_QUEUE, { payload = payload, tries = 0, nextAt = 0 }) end
 
 task.spawn(function()
   task.wait(1.0)
@@ -326,10 +312,12 @@ local function sendPurchaseLog(data)
   if tostring(data.status) == "ok" then enqueueLog(data) end
 end
 
+-- NEW: success if either NetWorth drops near price OR stock decreases
 local function purchaseOnce(id, price, eta)
   local name = (ID_TO_NAME[id] or labelOf(id))
   local beforeNW=getNetWorth()
   local beforeQty=getStockNow(id)
+
   local okFire=select(1, pcall(function()
     local re,rf=findRemotes()
     if re then BUY_RE=re end
@@ -337,25 +325,30 @@ local function purchaseOnce(id, price, eta)
     BUY_RE:FireServer(id)
   end))
   if not okFire then return false end
+
   task.wait(AFTER_FIRE_PAUSE)
   local t0=os.clock()
-  repeat
+  while os.clock()-t0 <= VERIFY_WINDOW do
     task.wait(POLL_STEP)
     local nw=getNetWorth()
-    if nw < beforeNW - math.max(1, math.floor(price*0.95)) then
-      sendPurchaseLog({uid=HttpService:GenerateGUID(false), action="purchase", id=id, name=name, price=price, net_before=beforeNW, net_after=nw, refresh_eta=eta, status="ok"})
+    local drop=(beforeNW or 0) - (nw or 0)
+    local live=getStockNow(id)
+
+    local paidOkay = math.abs(drop - (price or 0)) <= math.max(1, (price or 0) * 0.10)
+    local stockDown = (type(beforeQty)=="number" and type(live)=="number" and live < beforeQty)
+
+    if paidOkay or stockDown then
+      sendPurchaseLog({
+        uid=HttpService:GenerateGUID(false), action="purchase",
+        id=id, name=name, price=price, net_before=beforeNW, net_after=nw, refresh_eta=eta, status="ok"
+      })
+      if type(live)=="number" then STOCK_MAP[id]=live end
       return true
     end
-    local q=getStockNow(id)
-    if type(q)=="number" and type(beforeQty)=="number" and q < beforeQty then
-      sendPurchaseLog({uid=HttpService:GenerateGUID(false), action="purchase", id=id, name=name, price=price, net_before=beforeNW, net_after=getNetWorth(), refresh_eta=eta, status="ok"})
-      return true
-    end
-  until os.clock()-t0>VERIFY_WINDOW
+  end
   return false
 end
 
--- ========= refresh timing =========
 local REFRESH_PERIOD=300
 local FAST_WINDOW=25
 local NEAR_WINDOW=40
@@ -400,7 +393,6 @@ local function currentDelay(eta)
   end
 end
 
--- ========= rebind & watchdog =========
 local REBIND_EVERY_SEC = 60
 local lastRebind = 0
 local function rebindAll()
@@ -432,11 +424,9 @@ local function maybeRecover()
   end
 end
 
--- ========= boot =========
 refreshStoreMaps()
 mergeSelectionsFromPretty()
 
--- ========= main loop =========
 local RUNNING=true
 task.spawn(function()
   while RUNNING do
@@ -466,7 +456,7 @@ task.spawn(function()
       while bought<MAX_PER_FRUIT_PER_TICK do
         if net < it.price or it.price <= 0 then break end
         local live = getStockNow(it.id)
-        if live and live <= 0 then break end
+        if type(live)=="number" and live <= 0 then break end
         local ok=purchaseOnce(it.id,it.price,eta)
         if not ok then break end
         bought=bought+1
