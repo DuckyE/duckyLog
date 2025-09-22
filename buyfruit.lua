@@ -1,5 +1,5 @@
 local SELECTED_FRUITS = {
-  Strawberry=false, Blueberry=false, Watermelon=false, Apple=false, Orange=false,
+  Strawberry=true, Blueberry=false, Watermelon=false, Apple=false, Orange=false,
   Corn=false, Banana=false, Grape=false, Pear=true, Pineapple=true,
   GoldMango=true, BloodstoneCycad=true, ColossalPinecone=true, VoltGinkgo=true,
   DeepseaPearlFruit=true, DragonFruit=true, Durian=true,
@@ -11,10 +11,7 @@ local SELECTED_BY_NAME = {
 
 local MAX_PER_FRUIT_PER_TICK = math.huge
 local VERBOSE = true
-local PURCHASE_TOAST = true
-local SEND_LOG = true
-local DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1419111758051672236/-UtONg5EotVTM2RusXQ5RH5drjJzvt4NwcfmKYaIp6jhKKMMNpewS00aStGiJCa_7P9D"
-local LOG_TAG = "AutoFruit"
+local PURCHASE_TOAST = false
 
 local FRUIT_DATA = {
   Strawberry={Price="5,000"}, Blueberry={Price="20,000"}, Watermelon={Price="80,000"},
@@ -38,14 +35,7 @@ local function fruitIcon(id) return FRUIT_EMOJI[id] or "" end
 local Players=game:GetService("Players")
 local RS=game:GetService("ReplicatedStorage")
 local StarterGui=game:GetService("StarterGui")
-local HttpService=game:GetService("HttpService")
 local LP=Players.LocalPlayer
-
-local requestFn = (syn and syn.request)
-  or (http and http.request)
-  or rawget(getfenv(), "http_request")
-  or rawget(getfenv(), "request")
-  or nil
 
 local function parsePrice(p)
   if type(p)=="number" then return p end
@@ -190,7 +180,6 @@ local function getStockNow(id)
   return nil
 end
 
--- NEW: be permissive if stock can't be read
 local function fruitInStockFresh(id, eta)
   local cached = STOCK_MAP[id]
   if type(cached) == "number" then return cached > 0 end
@@ -215,104 +204,6 @@ local POLL_STEP=0.12
 local BETWEEN_PURCHASE_DELAY=0.25
 local BETWEEN_ITEMS_DELAY=0.15
 
-local function nowThaiFooter()
-  local utc = os.time(os.date("!*t"))
-  local th  = utc + 7*60*60
-  local t   = os.date("!*t", th)
-  return string.format("วันนี้ เวลา %02d:%02d", t.hour, t.min)
-end
-local function nowThaiISO()
-  local utc = os.time(os.date("!*t"))
-  local th  = utc + 7*60*60
-  local t   = os.date("!*t", th)
-  return string.format("%04d-%02d-%02d %02d:%02d:%02d", t.year,t.month,t.day,t.hour,t.min,t.sec)
-end
-
-local function safeRequest(opts)
-  if not requestFn then return false, "no-request", nil end
-  local ok,res=pcall(function() return requestFn(opts) end)
-  if not ok or not res then return false, "req-error", nil end
-  local status = tonumber(res.StatusCode or res.Status or res.status) or 0
-  local body
-  local raw = res.Body
-  if type(raw)=="string" and #raw>0 then
-    local ok2,decoded = pcall(function() return HttpService:JSONDecode(raw) end)
-    if ok2 then body = decoded end
-  end
-  return status>=200 and status<300, status, body
-end
-
-local function buildDiscordBody(payload)
-  local buyer = (LP and (LP.DisplayName and (LP.DisplayName.." ("..LP.Name..")") or LP.Name)) or "Player"
-  local uid   = payload.uid or HttpService:GenerateGUID(false)
-  local fruit = payload.name or payload.id
-  local icon  = fruitIcon(payload.id) or ""
-  local fields = {
-    { name = "🆔 UID", value = tostring(uid), inline = false },
-    { name = "🍎 Fruit", value = tostring(fruit), inline = true },
-    { name = "💰 Price", value = "฿"..comma(payload.price or 0), inline = true },
-    { name = "📉 NetWorth", value = (comma(payload.net_before or 0).." → "..comma(payload.net_after or 0)), inline = false },
-    { name = "⏱️ Refresh ETA", value = tostring(payload.refresh_eta or "NA").."s", inline = true },
-    { name = "🧑‍💼 Buyer", value = buyer, inline = true },
-    { name = "🕒 เวลา (ไทย)", value = nowThaiISO(), inline = false },
-  }
-  return {
-    username = buyer,
-    embeds = {{
-      author = { name = buyer },
-      title = icon.." Fruit Purchased!",
-      description = "ซื้อสำเร็จ!",
-      color = 0x57F287,
-      fields = fields,
-      footer = { text = LOG_TAG.." • "..nowThaiFooter() }
-    }}
-  }
-end
-
-local LOG_QUEUE = {}
-local RUN_LOG_SENDER = true
-local function enqueueLog(payload) table.insert(LOG_QUEUE, { payload = payload, tries = 0, nextAt = 0 }) end
-
-task.spawn(function()
-  task.wait(1.0)
-  while RUN_LOG_SENDER do
-    local nowT = os.clock()
-    local itemIdx
-    for i,it in ipairs(LOG_QUEUE) do
-      if (it.nextAt or 0) <= nowT then itemIdx = i break end
-    end
-    if not itemIdx then task.wait(0.15) continue end
-    local it = table.remove(LOG_QUEUE, itemIdx)
-    local p  = it.payload
-    local body = buildDiscordBody(p)
-    local ok,status,resBody = safeRequest({
-      Url = DISCORD_WEBHOOK_URL, Method = "POST",
-      Headers = { ["Content-Type"] = "application/json" },
-      Body = HttpService:JSONEncode(body)
-    })
-    if not ok then
-      it.tries = (it.tries or 0) + 1
-      if it.tries < 5 then
-        local backoff = 0.6 * it.tries
-        if status == 429 then
-          local ra = (type(resBody)=="table" and tonumber(resBody.retry_after or resBody.retryAfter)) or 1.0
-          backoff = math.max(0.2, ra)
-        end
-        it.nextAt = os.clock() + math.min(3.0, backoff)
-        table.insert(LOG_QUEUE, it)
-      end
-    end
-    task.wait(0.05)
-  end
-end)
-
-local function sendPurchaseLog(data)
-  if not SEND_LOG then return end
-  if not data.uid then data.uid = HttpService:GenerateGUID(false) end
-  if tostring(data.status) == "ok" then enqueueLog(data) end
-end
-
--- NEW: success if either NetWorth drops near price OR stock decreases
 local function purchaseOnce(id, price, eta)
   local name = (ID_TO_NAME[id] or labelOf(id))
   local beforeNW=getNetWorth()
@@ -338,10 +229,6 @@ local function purchaseOnce(id, price, eta)
     local stockDown = (type(beforeQty)=="number" and type(live)=="number" and live < beforeQty)
 
     if paidOkay or stockDown then
-      sendPurchaseLog({
-        uid=HttpService:GenerateGUID(false), action="purchase",
-        id=id, name=name, price=price, net_before=beforeNW, net_after=nw, refresh_eta=eta, status="ok"
-      })
       if type(live)=="number" then STOCK_MAP[id]=live end
       return true
     end
