@@ -251,28 +251,12 @@ local function safeRequest(opts)
   return status>=200 and status<300, status, body
 end
 
--- ========= Roblox headshot for Discord avatar =========
-local function getHeadshotUrl()
-  local url = ""
-  pcall(function()
-    if LP and LP.UserId then
-      url = Players:GetUserThumbnailAsync(
-        LP.UserId,
-        Enum.ThumbnailType.HeadShot,
-        Enum.ThumbnailSize.Size180x180
-      )
-    end
-  end)
-  return url
-end
-
--- === Embed ===
+-- === Embed (no profile image) ===
 local function buildDiscordBody(payload)
   local buyer = (LP and (LP.DisplayName and (LP.DisplayName.." ("..LP.Name..")") or LP.Name)) or "Player"
   local uid   = payload.uid or HttpService:GenerateGUID(false)
   local fruit = payload.name or payload.id
   local icon  = fruitIcon(payload.id) or ""
-  local avatar = getHeadshotUrl()
 
   local fields = {
     { name = "🆔 UID", value = tostring(uid), inline = false },
@@ -286,14 +270,12 @@ local function buildDiscordBody(payload)
 
   return {
     username = buyer,
-    avatar_url = (avatar ~= "" and avatar or nil),
     embeds = {{
-      author = { name = buyer, icon_url = avatar },
+      author = { name = buyer },
       title = icon.." Fruit Purchased!",
       description = "ซื้อสำเร็จ!",
       color = 0x57F287,
       fields = fields,
-      thumbnail = { url = avatar },
       footer = { text = LOG_TAG.." • "..nowThaiFooter() }
     }}
   }
