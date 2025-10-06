@@ -1,8 +1,8 @@
 local SELECTED_FRUITS = {
   Strawberry=false, Blueberry=false, Watermelon=false, Apple=false, Orange=false,
   Corn=false, Banana=false, Grape=false, Pear=false, Pineapple=false,
-  GoldMango=true, BloodstoneCycad=true, ColossalPinecone=true, VoltGinkgo=true,
-  DeepseaPearlFruit=true, DragonFruit=false, Durian=true,
+  GoldMango=false, BloodstoneCycad=false, ColossalPinecone=false, VoltGinkgo=true,
+  DeepseaPearlFruit=false, DragonFruit=false, Durian=true,
 }
 local SELECTED_BY_NAME = {
   "Gold Mango","Bloodstone Cycad","ColossalPinecone","Volt Ginkgo","Deepsea Pearl Fruit",
