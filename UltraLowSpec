@@ -1,9 +1,9 @@
-local Players = game:GetService("Players")
+-- UltraLowSpec – no Players/LocalPlayer references
 local RunService = game:GetService("RunService")
-local Lighting = game:GetService("Lighting")
-local UIS = game:GetService("UserInputService")
-local VIM = game:GetService("VirtualInputManager")
-local LP = Players.LocalPlayer
+local Lighting   = game:GetService("Lighting")
+local UIS        = game:GetService("UserInputService")
+local VIM        = game:GetService("VirtualInputManager")
+local CoreGui    = game:GetService("CoreGui")
 
 local STATE = {
 	on = false,
@@ -12,11 +12,7 @@ local STATE = {
 	disabledLights = {},
 	disabledGuis = {},
 	disabledScripts = {},
-	animate = nil,
-	animator = nil,
 	camPrev = { type = nil, subject = nil, fov = nil },
-	moneyConn = {},
-	moneySource = nil,
 	themeIndex = 1,
 }
 
@@ -73,21 +69,20 @@ end
 
 local function cycleTheme()
   STATE.themeIndex = STATE.themeIndex % #THEMES + 1
-  local ui = LP:FindFirstChild("PlayerGui") and LP.PlayerGui:FindFirstChild("ULS_UI")
+  local ui = CoreGui:FindFirstChild("ULS_UI")
   if ui then applyTheme(ui) end
 end
 
 -- ===== UI =====
 local function ensureUI()
-	local pg = LP:FindFirstChild("PlayerGui") or LP:WaitForChild("PlayerGui")
-	local ui = pg:FindFirstChild("ULS_UI")
+	local ui = CoreGui:FindFirstChild("ULS_UI")
 	if not ui then
 		ui = Instance.new("ScreenGui")
 		ui.Name = "ULS_UI"
 		ui.IgnoreGuiInset = true
 		ui.DisplayOrder = 2^31-1
 		ui.ResetOnSpawn = false
-		ui.Parent = pg
+		ui.Parent = CoreGui
 
 		local label = Instance.new("TextLabel")
 		label.Name = "Status"
@@ -97,6 +92,7 @@ local function ensureUI()
 		label.BackgroundTransparency = 0.15
 		label.TextScaled = true
 		label.Font = Enum.Font.GothamBold
+		label.Text = "UltraLowSpec: PREP…"
 		label.TextColor3 = Color3.fromRGB(240,240,240)
 		label.TextStrokeColor3 = Color3.fromRGB(0,0,0)
 		label.TextStrokeTransparency = 0
@@ -154,7 +150,7 @@ local function ensureUI()
 		nameLbl.BackgroundTransparency = 1
 		nameLbl.TextScaled = true
 		nameLbl.Font = Enum.Font.GothamBlack
-		nameLbl.Text = ""
+		nameLbl.Text = "" -- ไม่มี Players แล้ว จะปล่อยว่าง/ตั้งชื่อคงที่ก็ได้
 		nameLbl.ZIndex = 60
 		nameLbl.Parent = panel
 
@@ -164,7 +160,7 @@ local function ensureUI()
 		moneyLbl.BackgroundTransparency = 1
 		moneyLbl.TextScaled = true
 		moneyLbl.Font = Enum.Font.GothamBold
-		moneyLbl.Text = "Coins: —"
+		moneyLbl.Text = "Ultra Mode"
 		moneyLbl.ZIndex = 60
 		moneyLbl.Parent = panel
 	end
@@ -189,119 +185,11 @@ local function setStatus(text)
 	if label then label.Text = text end
 end
 
-local function formatNumber(n)
-	if typeof(n) ~= "number" then return tostring(n) end
-	local s, k = tostring(math.floor(n)), nil
-	while true do s, k = s:gsub("^(-?%d+)(%d%d%d)", "%1,%2"); if k == 0 then break end end
-	return s
-end
-
-local function updateCenterName()
-	local ui = ensureUI()
-	local cn = ui:FindFirstChild("CenterPanel") and ui.CenterPanel:FindFirstChild("CenterName")
-	if not cn then return end
-	local display = (LP.DisplayName and #LP.DisplayName > 0) and LP.DisplayName or LP.Name
-	cn.Text = display
-end
-
--- ===== เงินในเกม =====
-local CANDIDATE_NAMES = { "Coins","Money","Cash","Gold","Gems","Coin","Baht" }
-local function clearMoneyWires()
-	for _,c in pairs(STATE.moneyConn) do if typeof(c)=="RBXScriptConnection" then c:Disconnect() end end
-	STATE.moneyConn = {}
-end
-local function setMoneyText(text)
-	local ui = ensureUI()
-	local lbl = ui:FindFirstChild("CenterPanel") and ui.CenterPanel:FindFirstChild("CenterMoney")
-	if lbl then lbl.Text = text end
-end
-local function updateMoneyLabel()
-	if not STATE.moneySource then setMoneyText("Coins: —"); return end
-	if typeof(STATE.moneySource) == "Instance" then
-		local v = tonumber(STATE.moneySource.Value)
-		setMoneyText("Coins: ".. (v and formatNumber(v) or "—"))
-	elseif typeof(STATE.moneySource) == "string" and STATE.moneySource:sub(1,5) == "attr:" then
-		local name = STATE.moneySource:sub(6)
-		local v = LP:GetAttribute(name)
-		setMoneyText((name..": ".. (v and formatNumber(v) or "—")))
-	end
-end
-local function findMoneySource()
-	STATE.moneySource = nil
-	clearMoneyWires()
-	local ls = LP:FindFirstChild("leaderstats")
-	if ls then
-		for _, nm in ipairs(CANDIDATE_NAMES) do
-			local val = ls:FindFirstChild(nm)
-			if val and (val:IsA("IntValue") or val:IsA("NumberValue")) then
-				STATE.moneySource = val
-				table.insert(STATE.moneyConn, val.Changed:Connect(updateMoneyLabel))
-				break
-			end
-		end
-		if not STATE.moneySource then
-			for _, ch in ipairs(ls:GetChildren()) do
-				if ch:IsA("IntValue") or ch:IsA("NumberValue") then
-					STATE.moneySource = ch
-					table.insert(STATE.moneyConn, ch.Changed:Connect(updateMoneyLabel))
-					break
-				end
-			end
-		end
-		table.insert(STATE.moneyConn, ls.ChildAdded:Connect(findMoneySource))
-		table.insert(STATE.moneyConn, ls.ChildRemoved:Connect(findMoneySource))
-	end
-	if not STATE.moneySource then
-		for _, nm in ipairs(CANDIDATE_NAMES) do
-			if LP:GetAttribute(nm) ~= nil then
-				STATE.moneySource = "attr:"..nm
-				table.insert(STATE.moneyConn, LP:GetAttributeChangedSignal(nm):Connect(updateMoneyLabel))
-				break
-			end
-		end
-	end
-	updateMoneyLabel()
-end
-
--- ===== Anim/Camera/Ultra =====
-local function stopAnimations(char)
-	local hum = char and char:FindFirstChildOfClass("Humanoid"); if not hum then return end
-	local animator = hum:FindFirstChildOfClass("Animator")
-	if animator then for _, tr in ipairs(animator:GetPlayingAnimationTracks()) do tr:Stop(0) end; STATE.animator = animator end
-	local animate = char:FindFirstChild("Animate")
-	if animate and animate:IsA("LocalScript") then animate.Disabled = true; STATE.animate = animate end
-end
-local function freezeCharacter(char)
-	local hum = char and char:FindFirstChildOfClass("Humanoid"); if not hum then return end
-	for _, st in ipairs(Enum.HumanoidStateType:GetEnumItems()) do if st ~= Enum.HumanoidStateType.Dead then hum:SetStateEnabled(st, false) end end
-	hum.AutoRotate=false; hum.WalkSpeed=0; hum.JumpPower=0; hum:ChangeState(Enum.HumanoidStateType.Physics)
-end
-local function unfreezeCharacter(char)
-	local hum = char and char:FindFirstChildOfClass("Humanoid"); if not hum then return end
-	for _, st in ipairs(Enum.HumanoidStateType:GetEnumItems()) do hum:SetStateEnabled(st,true) end
-	hum.AutoRotate=true; hum.WalkSpeed=16; hum.JumpPower=50; hum:ChangeState(Enum.HumanoidStateType.Running)
-end
-local function killUI()
-	local pg = LP:FindFirstChild("PlayerGui"); if not pg then return end
-	for _, g in ipairs(pg:GetChildren()) do
-		if g:IsA("ScreenGui") and g.Name ~= "ULS_UI" then
-			if g.Enabled then table.insert(STATE.disabledGuis,g) end
-			g.Enabled=false
-			for _, sc in ipairs(g:GetDescendants()) do
-				if sc:IsA("LocalScript") and sc.Enabled~=false then table.insert(STATE.disabledScripts,sc); sc.Disabled=true end
-			end
-		end
-	end
-end
-local function restoreUI()
-	for _, sc in ipairs(STATE.disabledScripts) do if sc and sc.Parent then sc.Disabled=false end end
-	for _, g in ipairs(STATE.disabledGuis) do if g and g.Parent then g.Enabled=true end end
-	STATE.disabledScripts = {}; STATE.disabledGuis = {}
-end
+-- ===== Lighting / Effects =====
 local function disableEffectsDeep(root)
 	for _, o in ipairs(root:GetDescendants()) do
-		if isEffect(o) then if o.Enabled~=false then table.insert(STATE.disabledEffects,o) end; o.Enabled=false
-		elseif isLight(o) then if o.Enabled~=false then table.insert(STATE.disabledLights,o) end; o.Enabled=false end
+		if isEffect(o) then o.Enabled=false
+		elseif isLight(o) then o.Enabled=false end
 	end
 end
 local function restoreEffects()
@@ -311,11 +199,16 @@ local function restoreEffects()
 end
 local function disableLighting()
 	for _, e in ipairs(Lighting:GetChildren()) do
-		if isPostEffect(e) then if e.Enabled~=false then table.insert(STATE.disabledEffects,e) end; e.Enabled=false end
+		if isPostEffect(e) then e.Enabled=false end
 	end
-	STATE._oldEnvSpec=Lighting.EnvironmentSpecularScale; STATE._oldEnvDiff=Lighting.EnvironmentDiffuseScale
-	STATE._oldGlobalShadows=Lighting.GlobalShadows; STATE._oldBrightness=Lighting.Brightness
-	Lighting.EnvironmentSpecularScale=0; Lighting.EnvironmentDiffuseScale=0; Lighting.GlobalShadows=false; Lighting.Brightness=1
+	STATE._oldEnvSpec=Lighting.EnvironmentSpecularScale
+	STATE._oldEnvDiff=Lighting.EnvironmentDiffuseScale
+	STATE._oldGlobalShadows=Lighting.GlobalShadows
+	STATE._oldBrightness=Lighting.Brightness
+	Lighting.EnvironmentSpecularScale=0
+	Lighting.EnvironmentDiffuseScale=0
+	Lighting.GlobalShadows=false
+	Lighting.Brightness=1
 end
 local function restoreLighting()
 	restoreEffects()
@@ -325,26 +218,28 @@ local function restoreLighting()
 	if STATE._oldBrightness~=nil then Lighting.Brightness=STATE._oldBrightness end
 	STATE._oldEnvSpec,STATE._oldEnvDiff,STATE._oldGlobalShadows,STATE._oldBrightness=nil,nil,nil,nil
 end
+
+-- ===== Camera =====
 local function saveCam()
 	local cam = workspace.CurrentCamera
-	STATE.camPrev.type = cam.CameraType; STATE.camPrev.subject = cam.CameraSubject; STATE.camPrev.fov = cam.FieldOfView
+	STATE.camPrev.type = cam.CameraType
+	STATE.camPrev.subject = cam.CameraSubject
+	STATE.camPrev.fov = cam.FieldOfView
 end
-local function applyCamUltra() workspace.CurrentCamera.CameraType = Enum.CameraType.Scriptable end
+local function applyCamUltra()
+	workspace.CurrentCamera.CameraType = Enum.CameraType.Scriptable
+end
 local function restoreCam()
 	local cam = workspace.CurrentCamera
 	if STATE.camPrev.type then cam.CameraType=STATE.camPrev.type end
 	if STATE.camPrev.subject then cam.CameraSubject=STATE.camPrev.subject end
 	if STATE.camPrev.fov then cam.FieldOfView=STATE.camPrev.fov end
 end
+
 local function hookDescendants()
 	STATE.conn.descAdded = workspace.DescendantAdded:Connect(function(o)
 		if not STATE.on then return end
-		if isEffect(o) then o.Enabled=false end
-		if isLight(o) then o.Enabled=false end
-	end)
-	STATE.conn.charAdded = LP.CharacterAdded:Connect(function(char)
-		if not STATE.on then return end
-		task.wait(0.25); stopAnimations(char); freezeCharacter(char)
+		if isEffect(o) or isLight(o) then o.Enabled=false end
 	end)
 	STATE.conn.lightingChild = Lighting.ChildAdded:Connect(function(o)
 		if not STATE.on then return end
@@ -352,7 +247,9 @@ local function hookDescendants()
 	end)
 end
 local function unhookDescendants()
-	for _, c in pairs(STATE.conn) do if typeof(c)=="RBXScriptConnection" then c:Disconnect() end end
+	for _, c in pairs(STATE.conn) do
+		if typeof(c)=="RBXScriptConnection" then c:Disconnect() end
+	end
 	STATE.conn = {}
 end
 
@@ -365,30 +262,45 @@ local function tapKey(keyCode)
 	end)
 end
 
+-- ปิดทุก ScreenGui (ยกเว้นของเรา) + ปิด LocalScripts ในนั้น
+local function killUI()
+	for _, g in ipairs(CoreGui:GetChildren()) do
+		if g:IsA("ScreenGui") and g.Name ~= "ULS_UI" then
+			if g.Enabled then table.insert(STATE.disabledGuis,g) end
+			g.Enabled=false
+			for _, sc in ipairs(g:GetDescendants()) do
+				if sc:IsA("LocalScript") and sc.Enabled~=false then
+					table.insert(STATE.disabledScripts,sc)
+					sc.Disabled=true
+				end
+			end
+		end
+	end
+end
+local function restoreUI()
+	for _, sc in ipairs(STATE.disabledScripts) do if sc and sc.Parent then sc.Disabled=false end end
+	for _, g in ipairs(STATE.disabledGuis) do if g and g.Parent then g.Enabled=true end end
+	STATE.disabledScripts = {}; STATE.disabledGuis = {}
+end
+
 local function ultraOn()
 	if STATE.on then return end
 	STATE.on = true
 	saveCam(); applyCamUltra()
 	RunService:Set3dRenderingEnabled(false)
 	disableLighting(); disableEffectsDeep(workspace); killUI()
-
-	-- จอดำ + โอเวอร์เลย์ขึ้นทันที
 	showBlackCover(true)
 	showOverlay(true)
-	updateCenterName()
-	findMoneySource()
-	updateMoneyLabel()
 	applyTheme(ensureUI())
 
-	-- กด Tab และ Ctrl อย่างละ 1 รอบ (เว้นจังหวะเล็กน้อย)
+	-- ตัวอย่างส่งคีย์ Tab และ Ctrl อย่างละ 1 รอบ
 	task.delay(0.15, function()
 		tapKey(Enum.KeyCode.Tab)
 		task.wait(0.12)
 		tapKey(Enum.KeyCode.LeftControl)
 	end)
 
-	local char = LP.Character or LP.CharacterAdded:Wait()
-	stopAnimations(char); freezeCharacter(char); hookDescendants()
+	hookDescendants()
 	setStatus("UltraLowSpec: ON (F8 toggle, F7 theme)")
 end
 
@@ -399,69 +311,53 @@ local function ultraOff()
 	RunService:Set3dRenderingEnabled(true)
 	restoreLighting(); restoreEffects(); restoreUI()
 	showOverlay(false); showBlackCover(false)
-	local char = LP.Character
-	if STATE.animate and STATE.animate.Parent then STATE.animate.Disabled=false end
-	STATE.animate=nil
-	if char then unfreezeCharacter(char) end
 	restoreCam()
 	setStatus("UltraLowSpec: OFF (F8 toggle, F7 theme)")
 end
 
 -- ===== Boot =====
-ensureUI(); setStatus("UltraLowSpec: PREP…")
-updateCenterName()
-if LP then LP:GetPropertyChangedSignal("DisplayName"):Connect(updateCenterName) end
-LP.ChildAdded:Connect(function(ch) if ch.Name=="leaderstats" then findMoneySource() end end)
-UIS.InputBegan:Connect(function(input,gp) if gp then return end
-  if input.KeyCode==Enum.KeyCode.F7 then cycleTheme() end
+ensureUI(); setStatus("UltraLowSpec: READY")
+UIS.InputBegan:Connect(function(input,gp)
+	if gp then return end
+	if input.KeyCode==Enum.KeyCode.F7 then cycleTheme()
+	elseif input.KeyCode==Enum.KeyCode.F8 then
+		if STATE.on then ultraOff() else ultraOn() end
+	end
 end)
 
-local WHITELIST = { booth=true, Players=true, Pets=true }
-local function waitRenderFrames(n) for _=1,n do RunService.RenderStepped:Wait() end end
-local function awaitReady(timeout)
-	timeout = timeout or 45
-	local t0 = os.clock()
-	if not game:IsLoaded() then game.Loaded:Wait() end
-	local function timeLeft() return math.max(0.1, timeout - (os.clock()-t0)) end
-	local cam = workspace.CurrentCamera
-	if not cam then
-		local got=false; local conn
-		conn = workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
-			if workspace.CurrentCamera then got=true; conn:Disconnect() end
-		end)
-		while not got and (os.clock()-t0) < timeout do RunService.Heartbeat:Wait() end
-	end
-	waitRenderFrames(2)
-	if workspace.StreamingEnabled then
-		local char = LP.Character or LP.CharacterAdded:Wait(timeLeft())
-		local hrp = char and char:FindFirstChild("HumanoidRootPart")
-		if hrp then pcall(function() LP:RequestStreamAroundAsync(hrp.Position, 128) end) end
-		waitRenderFrames(2)
-	end
-end
+-- ตัวช่วยเล็ก ๆ
+local WHITELIST = { booth=true, Players=true, Pets=true } -- แค่ชื่อ whitelist ธรรมดา ไม่ได้ใช้ service Players
 local function isTarget(v)
 	return (v:IsA("Model") or v:IsA("Folder") or v:IsA("BasePart")) and not WHITELIST[v.Name]
 end
 local function sweepOnce()
 	for _, v in ipairs(workspace:GetChildren()) do
-		if isTarget(v) then task.defer(function() if v and v.Parent and isTarget(v) then v:Destroy() end end) end
+		if isTarget(v) then
+			task.defer(function()
+				if v and v.Parent and isTarget(v) then v:Destroy() end
+			end)
+		end
 	end
 end
 local function startSweeper(windowSeconds)
 	sweepOnce()
 	local conn
 	conn = workspace.ChildAdded:Connect(function(v)
-		if isTarget(v) then task.defer(function() if v and v.Parent and isTarget(v) then v:Destroy() end end) end
+		if isTarget(v) then
+			task.defer(function()
+				if v and v.Parent and isTarget(v) then v:Destroy() end
+			end)
+		end
 	end)
 	task.delay(windowSeconds or 30, function() if conn then conn:Disconnect() end end)
 end
 
+-- เริ่มใช้งานอัตโนมัติ (หน่วงเล็กน้อย)
 task.spawn(function()
-	awaitReady(45)
-	local extra = 15
-	setStatus(("UltraLowSpec: waiting %ds before start…"):format(extra))
+	local extra = 1
+	setStatus(("UltraLowSpec: starting in %ds…"):format(extra))
 	task.wait(extra)
 	ultraOn()
-	startSweeper(15)
+	startSweeper(30)
 	setStatus("UltraLowSpec: ON (auto)")
 end)
