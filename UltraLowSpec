@@ -380,18 +380,17 @@ local function ultraOn()
 	updateMoneyLabel()
 	applyTheme(ensureUI())
 
-	-- กด Tab และ F อย่างละ 1 รอบ (เว้นจังหวะเล็กน้อย)
+	-- กด Tab และ Ctrl อย่างละ 1 รอบ (เว้นจังหวะเล็กน้อย)
 	task.delay(0.15, function()
 		tapKey(Enum.KeyCode.Tab)
 		task.wait(0.12)
-		tapKey(Enum.KeyCode.F)
+		tapKey(Enum.KeyCode.LeftControl)
 	end)
 
 	local char = LP.Character or LP.CharacterAdded:Wait()
 	stopAnimations(char); freezeCharacter(char); hookDescendants()
 	setStatus("UltraLowSpec: ON (F8 toggle, F7 theme)")
 end
-
 
 local function ultraOff()
 	if not STATE.on then return end
@@ -407,6 +406,7 @@ local function ultraOff()
 	restoreCam()
 	setStatus("UltraLowSpec: OFF (F8 toggle, F7 theme)")
 end
+
 -- ===== Boot =====
 ensureUI(); setStatus("UltraLowSpec: PREP…")
 updateCenterName()
@@ -419,7 +419,7 @@ end)
 local WHITELIST = { booth=true, Players=true, Pets=true }
 local function waitRenderFrames(n) for _=1,n do RunService.RenderStepped:Wait() end end
 local function awaitReady(timeout)
-	timeout = timeout or 10 -- เดิม 45; ให้สั้นลงเพื่อสตาร์ทไว
+	timeout = timeout or 45
 	local t0 = os.clock()
 	if not game:IsLoaded() then game.Loaded:Wait() end
 	local function timeLeft() return math.max(0.1, timeout - (os.clock()-t0)) end
@@ -456,11 +456,12 @@ local function startSweeper(windowSeconds)
 	task.delay(windowSeconds or 30, function() if conn then conn:Disconnect() end end)
 end
 
--- เริ่มทำงาน “ทันที” หลังระบบพร้อมขั้นต้น (ไม่มีการ wait 30s)
 task.spawn(function()
-	awaitReady(10)
+	awaitReady(45)
+	local extra = 30
+	setStatus(("UltraLowSpec: waiting %ds before start…"):format(extra))
+	task.wait(extra)
 	ultraOn()
-	startSweeper(30)   -- ช่วงกันของใหม่โผล่ 30 วิ (จะเปลี่ยนเป็นค่าที่ต้องการก็ได้)
+	startSweeper(30)
 	setStatus("UltraLowSpec: ON (auto)")
 end)
-
