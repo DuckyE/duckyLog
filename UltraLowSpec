@@ -458,10 +458,10 @@ end
 
 task.spawn(function()
 	awaitReady(45)
-	local extra = 30
+	local extra = 15
 	setStatus(("UltraLowSpec: waiting %ds before start…"):format(extra))
 	task.wait(extra)
 	ultraOn()
-	startSweeper(30)
+	startSweeper(15)
 	setStatus("UltraLowSpec: ON (auto)")
 end)
