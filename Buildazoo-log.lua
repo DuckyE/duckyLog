@@ -18,8 +18,8 @@ if not CFG.EnableLog then
 end
 
 -- ===================== API CONFIG =====================
-local API_URL   = "http://localhost:3005/egg-log"
-local AUTH_TOKEN = "hJVS3w8PVcbbW84M"
+local API_URL   = "https://auth.ducky.host/egg-log"
+local AUTH_TOKEN = "hJVS3w8PVcbbW84M5"
 -- ======================================================
 
 local Players     = game:GetService("Players")
