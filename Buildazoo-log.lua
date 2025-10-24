@@ -5,7 +5,7 @@ if not getgenv().BuildazooConfig then
     getgenv().BuildazooConfig = {
         ["EnableLog"] = true,
         ["PC_NAME"] = "PC-001", -- ตั้งชื่อเครื่องนี้ (เปลี่ยนตามต้องการ)
-        ["KEY"] = "", -- Key ที่ได้จาก discord_id (จะถูกตั้งค่าอัตโนมัติ)
+        ["discord_id"] = "", -- discord_id ที่ได้จาก Roblox profile (จะถูกตั้งค่าอัตโนมัติ)
         ["UID"] = "" -- UID จะถูกตั้งค่าอัตโนมัติจาก UserId
     }
 end
@@ -53,26 +53,26 @@ local function getDiscordId()
     return nil
 end
 
--- ตั้งค่า UID และ Key อัตโนมัติ
+-- ตั้งค่า UID และ discord_id อัตโนมัติ
 local function setupAutoConfig()
     -- ตั้งค่า UID อัตโนมัติ
     if CFG.UID == "" or CFG.UID == nil then
         CFG.UID = tostring(MY_UID)
     end
     
-    -- ตั้งค่า Key จาก discord_id
-    if CFG.KEY == "" or CFG.KEY == nil then
+    -- ตั้งค่า discord_id จาก Roblox profile
+    if CFG.discord_id == "" or CFG.discord_id == nil then
         local discordId = getDiscordId()
         if discordId then
-            CFG.KEY = tostring(discordId)
+            CFG.discord_id = tostring(discordId)
             print("[Buildazoo] Auto-detected Discord ID:", discordId)
         else
-            CFG.KEY = "unknown_" .. MY_UID
-            print("[Buildazoo] Discord ID not found, using fallback key:", CFG.KEY)
+            CFG.discord_id = "unknown_" .. MY_UID
+            print("[Buildazoo] Discord ID not found, using fallback discord_id:", CFG.discord_id)
         end
     end
     
-    print("[Buildazoo] UID:", CFG.UID, "| KEY:", CFG.KEY)
+    print("[Buildazoo] UID:", CFG.UID, "| discord_id:", CFG.discord_id)
 end
 
 -- เรียกใช้การตั้งค่าอัตโนมัติ
@@ -214,7 +214,7 @@ local function buildAndMaybeSend(reason)
             jobId = tostring(game.JobId or "N/A"),
             pcName = CFG.PC_NAME,
             uid = CFG.UID,
-            key = CFG.KEY,
+            key = CFG.discord_id,
             payload = {
                 clientTime = os.time(),
                 period = 0,
@@ -233,7 +233,7 @@ local function buildAndMaybeSend(reason)
             
             if success and responseData then
                 if responseData.autoAdded then
-                    print("[Buildazoo] UID auto-added during check_uid:", responseData.uid, "with Discord ID:", responseData.discordId)
+                    print("[Buildazoo] UID auto-added during check_uid:", responseData.uid, "with discord_id:", responseData.discord_id)
                     UID_AUTO_ADDED = true
                 elseif responseData.uidExists then
                     print("[Buildazoo] UID validation successful:", responseData.uid)
@@ -261,7 +261,7 @@ local function buildAndMaybeSend(reason)
         jobId = tostring(game.JobId or "N/A"),
         pcName = CFG.PC_NAME, -- เพิ่มชื่อ PC
         uid = CFG.UID, -- เพิ่ม UID อัตโนมัติ
-        key = CFG.KEY, -- เพิ่ม Key ที่ได้จาก discord_id
+        key = CFG.discord_id, -- เพิ่ม discord_id ที่ได้จาก Roblox profile
         payload = {
             clientTime = os.time(),
             period = (reason == "heartbeat") and 3 or 0,
@@ -277,7 +277,7 @@ local function buildAndMaybeSend(reason)
         
         -- Check if UID was auto-added
         if payload.uidAutoAdded then
-            print("[Buildazoo] UID auto-added successfully:", payload.uid, "with Discord ID:", payload.discordId)
+            print("[Buildazoo] UID auto-added successfully:", payload.uid, "with discord_id:", payload.discord_id)
         end
     end
 end
