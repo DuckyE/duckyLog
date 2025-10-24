@@ -10,19 +10,14 @@ end
 
 local CFG = getgenv().BuildazooConfig
 
--- Debug: ตรวจสอบค่า CONFIG ที่อ่านได้
-print("🔧 BuildazooConfig loaded:")
-print("  - EnableLog:", CFG.EnableLog)
-print("  - PC_NAME:", CFG.PC_NAME)
-
 -- ตรวจสอบว่า EnableLog เป็น true หรือไม่
 if not CFG.EnableLog then
     return -- หยุดทำงานถ้า EnableLog เป็น false
 end
 
 -- ===================== API CONFIG =====================
-local API_URL   = "http://localhost:3005/egg-log"
-local AUTH_TOKEN = "u8N3QBKHNfnDWUwm9"
+local API_URL   = "https://auth.ducky.host/egg-log"
+local AUTH_TOKEN = "hJVS3w8PVcbbW84M"
 -- ======================================================
 
 local Players     = game:GetService("Players")
@@ -153,12 +148,6 @@ local function buildAndMaybeSend(reason)
             totals = buildSummaryTable(),
         }
     }
-    
-    -- Debug: ตรวจสอบ payload ที่ส่งไป
-    print("📤 Sending API request:")
-    print("  - Reason:", reason)
-    print("  - PC_NAME:", CFG.PC_NAME)
-    print("  - Player ID:", LP.UserId)
     
     local ok, code = sendToApi(payload)
     lastSendAt = t0
