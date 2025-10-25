@@ -4,7 +4,7 @@ if not game:IsLoaded() then game.Loaded:Wait() end
 if not getgenv().BuildazooConfig then
     getgenv().BuildazooConfig = {
         ["EnableLog"] = true,
-        ["PC_NAME"] = "", -- ตั้งชื่อเครื่องนี้ (เปลี่ยนตามต้องการ)
+        ["PC_NAME"] = "PC-001", -- ตั้งชื่อเครื่องนี้ (เปลี่ยนตามต้องการ)
         ["discord_id"] = "", -- discord_id ที่ได้จาก Roblox profile (จะถูกตั้งค่าอัตโนมัติ)
         ["UID"] = "" -- UID จะถูกตั้งค่าอัตโนมัติจาก UserId
     }
