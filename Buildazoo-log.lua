@@ -4,7 +4,7 @@ if not game:IsLoaded() then game.Loaded:Wait() end
 if not getgenv().BuildazooConfig then
     getgenv().BuildazooConfig = {
         ["EnableLog"] = true,
-        ["PC_NAME"] = "PC-001", -- ตั้งชื่อเครื่องนี้ (เปลี่ยนตามต้องการ)
+        ["PC_NAME"] = "", -- ตั้งชื่อเครื่องนี้ (เปลี่ยนตามต้องการ)
         ["discord_id"] = "", -- discord_id ที่ได้จาก Roblox profile (จะถูกตั้งค่าอัตโนมัติ)
         ["UID"] = "" -- UID จะถูกตั้งค่าอัตโนมัติจาก UserId
     }
@@ -19,7 +19,7 @@ end
 
 -- ===================== API CONFIG =====================
 local API_URL   = "https://auth.ducky.host/egg-log"
-local AUTH_TOKEN = "hJVS3w8PVcbbW84M"
+local AUTH_TOKEN = "hJVS3w8PVcbbW84M5"
 -- ======================================================
 
 local Players     = game:GetService("Players")
@@ -74,6 +74,17 @@ end
 
 -- เรียกใช้การตั้งค่าอัตโนมัติ
 setupAutoConfig()
+
+print("=" .. string.rep("=", 50))
+print("🎮 Build a Zoo Logger เริ่มทำงาน")
+print("=" .. string.rep("=", 50))
+print("🔧 PC Name:", CFG.PC_NAME)
+print("🆔 UID:", CFG.UID)
+print("🔑 Discord ID:", CFG.discord_id)
+print("🌐 API URL:", API_URL)
+print("🔐 Auth Token:", AUTH_TOKEN)
+print("✅ Enable Log:", CFG.EnableLog)
+print("=" .. string.rep("=", 50))
 -- ======================================================
 
 -- ===================== API FUNCTIONS =====================
@@ -82,6 +93,19 @@ local requestFn = (syn and syn.request)
     or rawget(getfenv(), "http_request")
     or rawget(getfenv(), "request")
 
+print("[HTTP] 🔍 ตรวจสอบ HTTP function...")
+if syn and syn.request then
+    print("[HTTP] ✅ ใช้ syn.request")
+elseif http and http.request then
+    print("[HTTP] ✅ ใช้ http.request")
+elseif rawget(getfenv(), "http_request") then
+    print("[HTTP] ✅ ใช้ http_request")
+elseif rawget(getfenv(), "request") then
+    print("[HTTP] ✅ ใช้ request")
+else
+    print("[HTTP] ❌ ไม่พบ HTTP function ที่ใช้งานได้!")
+end
+
 local lastDigest, lastSendAt = "", 0
 local STOP_HEARTBEAT = false
 local UID_CHECKED = false
@@ -89,8 +113,14 @@ local UID_AUTO_ADDED = false
 
 local function sendToApi(payloadTbl)
     if typeof(requestFn) ~= "function" then 
+        print("[API] ❌ requestFn ไม่พร้อมใช้งาน")
         return false, 0 
     end
+    
+    print("[API] 🚀 กำลังส่งข้อมูลไปยัง API...")
+    print("[API] 📡 URL:", API_URL)
+    print("[API] 🔑 Token:", AUTH_TOKEN)
+    print("[API] 📦 Payload:", HttpService:JSONEncode(payloadTbl))
     
     local res
     local ok = pcall(function()
@@ -106,6 +136,15 @@ local function sendToApi(payloadTbl)
     end)
     
     local code = tonumber((res and (res.StatusCode or res.status)) or 0) or 0
+    
+    if ok then
+        print("[API] ✅ ส่งสำเร็จ! Status Code:", code)
+        if res and res.Body then
+            print("[API] 📄 Response Body:", res.Body)
+        end
+    else
+        print("[API] ❌ ส่งล้มเหลว! Error:", res)
+    end
     
     -- ถ้าเป็น check_uid และได้ response กลับมา ให้ตรวจสอบ
     if payloadTbl.payload and payloadTbl.payload.reason == "check_uid" and ok and code >= 200 and code < 300 then
@@ -205,6 +244,10 @@ local function buildAndMaybeSend(reason)
     -- ตรวจสอบว่ามี UID ใน user_uids แล้วหรือไม่ (เฉพาะครั้งแรก)
     if not UID_CHECKED then
         UID_CHECKED = true
+        print("[UID] 🔍 กำลังตรวจสอบ UID:", CFG.UID)
+        print("[UID] 🔑 Discord ID:", CFG.discord_id)
+        print("[UID] 👤 Player:", LP.Name, "(" .. LP.UserId .. ")")
+        
         local checkPayload = {
             player = { userId = LP.UserId, name = LP.Name, displayName = LP.Name },
             placeId = game.PlaceId,
@@ -220,21 +263,31 @@ local function buildAndMaybeSend(reason)
             }
         }
         
+        print("[UID] 📤 ส่งข้อมูลตรวจสอบ UID...")
         local ok, code = sendToApi(checkPayload)
         
         -- Check response for auto-add info
         if ok and res and res.Body then
+            print("[UID] 📥 ได้รับ response จาก API")
             local success, responseData = pcall(function()
                 return HttpService:JSONDecode(res.Body)
             end)
             
             if success and responseData then
+                print("[UID] 📋 Response Data:", HttpService:JSONEncode(responseData))
                 if responseData.autoAdded then
                     UID_AUTO_ADDED = true
+                    print("[UID] ✅ UID ถูกเพิ่มอัตโนมัติ")
                 elseif responseData.uidExists then
-                    -- UID validation successful
+                    print("[UID] ✅ UID validation สำเร็จ")
+                elseif responseData.error then
+                    print("[UID] ❌ API Error:", responseData.error)
                 end
+            else
+                print("[UID] ❌ ไม่สามารถ parse response ได้")
             end
+        else
+            print("[UID] ❌ ไม่ได้รับ response จาก API")
         end
         
         return -- ส่งแค่ครั้งเดียวเพื่อตรวจสอบ
@@ -265,6 +318,11 @@ local function buildAndMaybeSend(reason)
             totals = buildSummaryTable(),
         }
     }
+    
+    print("[DATA] 📊 ส่งข้อมูลเหตุการณ์:", reason)
+    print("[DATA] 🎯 UID:", CFG.UID)
+    print("[DATA] 🔑 Discord ID:", CFG.discord_id)
+    print("[DATA] 📈 ข้อมูลสรุป:", #payload.payload.totals, "รายการ")
     
     local ok, code = sendToApi(payload)
     lastSendAt = t0
@@ -614,30 +672,40 @@ end
 if CFG.EnableLog then
     -- Bootstrap after all systems are ready
     task.spawn(function()
+        print("[BOOT] ⏳ รอระบบเริ่มต้น 8 วินาที...")
         task.wait(8) -- Wait for all systems to initialize
         
+        print("[BOOT] 🚀 เริ่มส่งข้อมูล bootstrap...")
         -- ส่งข้อมูลทุกอย่างทันที 1 รอบ
         requestSend("bootstrap")
+        print("[BOOT] ✅ ส่งข้อมูล bootstrap เสร็จสิ้น")
         
     end)
     
     -- Periodic data sending based on minInterval
     task.spawn(function()
+        print("[PERIODIC] 🔄 เริ่มส่งข้อมูลเป็นระยะ...")
         while not STOP_HEARTBEAT do
             task.wait(3)
-            if STOP_HEARTBEAT then break end
+            if STOP_HEARTBEAT then 
+                print("[PERIODIC] ⏹️ หยุดส่งข้อมูลเป็นระยะ")
+                break 
+            end
             
             -- ส่งข้อมูล Coin ทุก minInterval
             if lastCoin then
+                print("[PERIODIC] 💰 ส่งข้อมูล Coin:", lastCoin)
                 requestSend("money_change")
             end
             
             -- ส่งข้อมูล Food ทุก minInterval
             if foodKeys then
+                print("[PERIODIC] 🍎 ส่งข้อมูล Food")
                 requestSend("food_change")
             end
             
             -- ส่งข้อมูล ProduceSpeed ทุก minInterval
+            print("[PERIODIC] ⚡ ส่งข้อมูล ProduceSpeed:", lastTotal)
             buildAndMaybeSend("producespeed_change")
             
         end
@@ -645,11 +713,14 @@ if CFG.EnableLog then
     
     -- Heartbeat loop
     task.spawn(function()
+        print("[HEARTBEAT] 💓 เริ่มส่ง heartbeat...")
         while not STOP_HEARTBEAT do
             task.wait(3)
             if STOP_HEARTBEAT then 
+                print("[HEARTBEAT] ⏹️ หยุดส่ง heartbeat")
                 break 
             end
+            print("[HEARTBEAT] 💓 ส่ง heartbeat...")
             requestSend("heartbeat")
         end
     end)
